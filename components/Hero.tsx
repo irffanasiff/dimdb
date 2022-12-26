@@ -36,10 +36,9 @@ export default function Hero() {
             </Text>
           </Heading>
           <Text color={'gray.500'}>
-            Help others choose the correct movie to watch. Our movie reviews are
-            stored on blockchain. Make a good film successful and increasing
-            their box office collection. Save the movie makers from the loss of
-            money.
+            Help others choose the right movie to watch by sharing your honest
+            movie reviews on our website. Your reviews are stored securely on
+            the blockchain. Support movie makers by writing quality reviews.
           </Text>
           <Stack
             direction={'column'}

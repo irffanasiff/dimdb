@@ -16,6 +16,8 @@ import {
   useColorModeValue,
   Divider,
   Input,
+  FormErrorMessage,
+  Textarea,
 } from '@chakra-ui/react';
 import axios from 'axios';
 import Image from 'next/image';
@@ -24,6 +26,10 @@ import { movie } from '../../definitions/movie';
 import { review } from '../../definitions/review';
 import { ReviewCardHOC } from '../HOC/ReviewCard.HOC';
 import { movieDetails } from '../../definitions/movieDetails';
+import { useForm } from 'react-hook-form';
+import * as borsh from '@project-serum/borsh';
+import { useConnection, useWallet } from '@solana/wallet-adapter-react';
+import * as web3 from '@solana/web3.js';
 const ratingData: review[] = [
   {
     id: 13434,
@@ -80,6 +86,11 @@ const MovieCardHOC = ({ movie }: props) => {
   const { isOpen, onOpen, onClose } = useDisclosure();
   const [movieDetails, setMovieDetails] = useState<movieDetails | undefined>();
   const [reviews, setReviews] = useState<review[]>(ratingData);
+  const {
+    handleSubmit,
+    register,
+    formState: { errors, isSubmitting },
+  } = useForm({ mode: 'onSubmit', defaultValues: { review: '' } });
 
   useEffect(() => {
     if (!isOpen) return;
@@ -97,6 +108,71 @@ const MovieCardHOC = ({ movie }: props) => {
     } catch (error) {}
   }, [isOpen, movie]);
 
+  const { connection } = useConnection();
+  const { publicKey, sendTransaction } = useWallet();
+
+  async function onSubmit(values: any) {
+    const movieData = {
+      movieId: movie.id,
+      review: values.review,
+      rating: 4,
+    };
+    const borshInstructionSchema = borsh.struct([
+      borsh.str('movieId'),
+      borsh.str('review'),
+      borsh.u8('rating'),
+    ]);
+    const buffer = Buffer.alloc(1000);
+    borshInstructionSchema.encode(movieData, buffer);
+    buffer.slice(0, borshInstructionSchema.getSpan(buffer));
+
+    if (!publicKey) {
+      alert('please connect wallet');
+      return;
+    }
+
+    const transaction = new web3.Transaction();
+
+    const [pda] = await web3.PublicKey.findProgramAddress(
+      [publicKey.toBuffer(), new TextEncoder().encode(movie.title)],
+      new web3.PublicKey('MOVIE_REVIEW_PROGRAM_ID') // todo
+    );
+
+    const instruction = new web3.TransactionInstruction({
+      keys: [
+        {
+          // your account will pay the fees, so its writing on the network
+          pubkey: publicKey,
+          isSigner: true,
+          isWritable: false,
+        },
+        {
+          // the pda will store the movie review
+          pubkey: pda,
+          isSigner: false,
+          isWritable: true,
+        },
+        {
+          // the system program will be used for creating the pda
+          pubkey: web3.SystemProgram.programId,
+          isSigner: false,
+          isWritable: false,
+        },
+      ],
+      data: buffer,
+      programId: new web3.PublicKey('MOVIE_REVIEW_PROGRAM_ID'), // todo
+    });
+
+    transaction.add(instruction);
+    try {
+      let txid = await sendTransaction(transaction, connection);
+      console.log(
+        `Transaction submitted: https://explorer.solana.com/tx/${txid}?cluster=devnet`
+      );
+    } catch (e) {
+      alert(JSON.stringify(e));
+    }
+  }
 
   return (
     <Center>
@@ -213,20 +289,38 @@ const MovieCardHOC = ({ movie }: props) => {
                   <Text fontWeight={'500'} pb='0.5rem' fontSize={'lg'}>
                     Add Movie Review
                   </Text>
-                  <HStack w='full'>
-                    <Input w='full' />
-                    <Button
-                      bg={useColorModeValue('black', '#FACB47')}
-                      _hover={{
-                        bg: useColorModeValue('black', '#FACB47'),
-                        color: useColorModeValue('white', 'black'),
-                      }}
-                      color={useColorModeValue('white', 'black')}
-                      paddingX={'2rem'}
-                    >
-                      Post Review
-                    </Button>
-                  </HStack>
+                  <form
+                    onSubmit={handleSubmit(onSubmit)}
+                    style={{ width: '100%' }}
+                  >
+                    <HStack w='full' alignItems={'top'}>
+                      <Textarea
+                        w='full'
+                        {...register('review', {
+                          required: 'This is required',
+                          minLength: {
+                            value: 8,
+                            message: 'Minimum length should be 8',
+                          },
+                        })}
+                      />
+                      <Button
+                        type='submit'
+                        bg={useColorModeValue('black', '#FACB47')}
+                        _hover={{
+                          bg: useColorModeValue('black', '#FACB47'),
+                          color: useColorModeValue('white', 'black'),
+                        }}
+                        color={useColorModeValue('white', 'black')}
+                        paddingX={'2rem'}
+                      >
+                        Post Review
+                      </Button>
+                    </HStack>
+                    <FormErrorMessage>
+                      {errors.review && errors.review.message}
+                    </FormErrorMessage>
+                  </form>
                 </VStack>
               </VStack>
             </VStack>
